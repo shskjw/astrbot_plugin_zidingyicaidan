@@ -1,0 +1,43 @@
+{
+    "menu_trigger": {
+        "type": "string",
+        "description": "触发菜单的指令",
+        "default": "菜单"
+    },
+    "menu_title": {
+        "type": "string",
+        "description": "菜单顶部的标题文字",
+        "default": "AstrBot 功能菜单"
+    },
+    "layout_mode": {
+        "type": "string",
+        "description": "排版模式：vertical(竖屏 9:16) / horizontal(横屏 16:9)",
+        "enum": ["vertical", "horizontal"],
+        "default": "vertical"
+    },
+    "background_filename": {
+        "type": "string",
+        "description": "resources文件夹内的底图文件名 (需带后缀)",
+        "default": "bg.jpg"
+    },
+    "font_filename": {
+        "type": "string",
+        "description": "resources文件夹内的字体文件名 (建议使用 .ttf 或 .otf)",
+        "default": "font.ttf"
+    },
+    "menu_items": {
+        "type": "object",
+        "description": "菜单项列表 (格式为 \"触发词\": \"简介\")",
+        "default": {
+            "签到": "每日签到获取积分奖励",
+            "点歌": "网易云/QQ音乐在线点歌",
+            "天气": "查询当前或指定城市天气",
+            "GPT": "基于LLM的智能对话",
+            "画图": "根据提示词生成AI图片",
+            "帮助": "查看详细的使用说明"
+        },
+        "additionalProperties": {
+            "type": "string"
+        }
+    }
+}
