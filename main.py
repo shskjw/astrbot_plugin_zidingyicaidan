@@ -11,7 +11,7 @@ import aiohttp
 from PIL import Image as PILImage, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.0.4")
+@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.0.0")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -194,8 +194,8 @@ class CustomMenu(Star):
     # ==========================
 
     @filter.command("上传底图")
-    # 【修复】增加 *args 接收多余参数，防止报错
-    async def upload_bg_cmd(self, event: AstrMessageEvent, *args):
+    # 【重点修复】增加 *args 和 **kwargs 接收所有多余参数
+    async def upload_bg_cmd(self, event: AstrMessageEvent, *args, **kwargs):
         """指令：上传底图 (请引用图片或直接发送图片+指令)"""
 
         img_url = self._get_image_url(event)
@@ -227,8 +227,9 @@ class CustomMenu(Star):
             yield event.plain_result(f"❌ 图片保存或验证失败: {e}")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
-    # 【修复】增加 *args 接收多余参数，防止报错
-    async def menu(self, event: AstrMessageEvent, *args):
+    # 【重点修复】增加 *args 和 **kwargs 接收所有多余参数
+    async def menu(self, event: AstrMessageEvent, *args, **kwargs):
+        # 避免触发其他指令
         if event.message_str.startswith("上传底图"):
             return
 
