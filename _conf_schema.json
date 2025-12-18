@@ -11,33 +11,59 @@
     },
     "layout_mode": {
         "type": "string",
-        "description": "排版模式：vertical(竖屏 9:16) / horizontal(横屏 16:9)",
+        "description": "排版模式：vertical(竖屏) / horizontal(横屏)",
         "enum": ["vertical", "horizontal"],
         "default": "vertical"
     },
     "background_filename": {
         "type": "string",
-        "description": "resources文件夹内的底图文件名 (需带后缀)",
+        "description": "resources文件夹内的底图文件名",
         "default": "bg.jpg"
     },
     "font_filename": {
         "type": "string",
-        "description": "resources文件夹内的字体文件名 (建议使用 .ttf 或 .otf)",
+        "description": "resources文件夹内的字体文件名",
         "default": "font.ttf"
     },
+    "title_color": {
+        "type": "string",
+        "description": "标题颜色 (支持: #FFF, 红色, 255,255,255)",
+        "default": "白色"
+    },
+    "title_shadow_color": {
+        "type": "string",
+        "description": "标题阴影颜色 (支持RGBA: 0,0,0,128)",
+        "default": "0,0,0,128"
+    },
+    "card_bg_color": {
+        "type": "string",
+        "description": "卡片底色 (推荐半透明: 255,255,255,220)",
+        "default": "半透明白"
+    },
+    "trigger_text_color": {
+        "type": "string",
+        "description": "卡片触发词颜色",
+        "default": "深灰"
+    },
+    "desc_text_color": {
+        "type": "string",
+        "description": "卡片简介颜色",
+        "default": "灰色"
+    },
     "menu_items": {
-        "type": "object",
-        "description": "菜单项列表 (格式为 \"触发词\": \"简介\")",
-        "default": {
-            "签到": "每日签到获取积分奖励",
-            "点歌": "网易云/QQ音乐在线点歌",
-            "天气": "查询当前或指定城市天气",
-            "GPT": "基于LLM的智能对话",
-            "画图": "根据提示词生成AI图片",
-            "帮助": "查看详细的使用说明"
+        "type": "array",
+        "description": "菜单项列表",
+        "items": {
+            "type": "string",
+            "description": "格式: 触发词:简介"
         },
-        "additionalProperties": {
-            "type": "string"
-        }
+        "default": [
+            "签到:每日签到获取积分",
+            "点歌:网易云/QQ音乐点歌",
+            "天气:查询城市天气",
+            "GPT:智能AI对话",
+            "画图:AI绘画生成",
+            "帮助:查看使用说明"
+        ]
     }
 }

@@ -3,205 +3,189 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api.all import *
 import os
 import math
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "自定义底图、字体与排版的菜单插件", "1.1.0")
+@register("custom_menu", "YourName", "自定义底图菜单插件", "1.5.0")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
         self.config = config
-
-        # 确定资源目录路径
         self.res_dir = os.path.join(os.path.dirname(__file__), "resources")
         if not os.path.exists(self.res_dir):
             os.makedirs(self.res_dir)
 
-    def _load_font(self, size):
-        """
-        加载配置指定的字体文件。
-        如果指定文件不存在，尝试加载默认名 'font.ttf'。
-        """
-        config_font_name = self.config.get("font_filename", "font.ttf")
-        font_path = os.path.join(self.res_dir, config_font_name)
+        # 中文颜色映射表
+        self.cn_color_map = {
+            "白": "White", "白色": "White",
+            "黑": "Black", "黑色": "Black",
+            "红": "Red", "红色": "Red",
+            "绿": "Green", "绿色": "Green",
+            "蓝": "Blue", "蓝色": "Blue",
+            "黄": "Yellow", "黄色": "Yellow",
+            "青": "Cyan", "青色": "Cyan",
+            "紫": "Purple", "紫色": "Purple",
+            "粉": "Pink", "粉色": "Pink",
+            "橙": "Orange", "橙色": "Orange",
+            "灰": "Gray", "灰色": "Gray", "深灰": "DarkGray", "浅灰": "LightGray",
+            "棕": "Brown", "棕色": "Brown",
+            "透明": "#00000000",
+            "半透明白": "#FFFFFFDC",
+            "半透明黑": "#00000080",
+        }
 
-        # 1. 尝试加载配置的字体
+    def _load_font(self, size):
+        config_font = self.config.get("font_filename", "font.ttf")
+        font_path = os.path.join(self.res_dir, config_font)
         if os.path.exists(font_path):
             try:
                 return ImageFont.truetype(font_path, size)
-            except Exception as e:
-                self.context.logger.error(f"字体加载失败: {e}")
+            except:
+                pass
+        fallback = os.path.join(self.res_dir, "font.ttf")
+        return ImageFont.truetype(fallback, size) if os.path.exists(fallback) else ImageFont.load_default()
 
-        # 2. 如果失败，尝试加载默认 font.ttf
-        fallback_path = os.path.join(self.res_dir, "font.ttf")
-        if os.path.exists(fallback_path):
-            return ImageFont.truetype(fallback_path, size)
-
-        # 3. 如果还没有，使用系统默认（可能不支持中文）
-        return ImageFont.load_default()
-
-    def _process_background(self, target_width, target_height):
+    def _parse_smart_color(self, user_input, default_hex):
         """
-        读取并裁剪底图，使其填满目标分辨率
+        超级颜色解析器：
+        1. RGB/RGBA: "255,0,0" 或 "(255,0,0,128)" 或 "rgb(255,0,0)"
+        2. Hex: "#FF0000"
+        3. 中文: "红色", "深蓝"
+        4. 英文: "SkyBlue"
         """
+        if not user_input:
+            user_input = default_hex
+
+        user_input = str(user_input).strip()
+
+        # --- 1. 尝试解析 RGB/RGBA 数值 (检测逗号) ---
+        if "," in user_input:
+            try:
+                # 清洗字符串，去掉 rgb, rgba, 括号
+                clean_str = user_input.lower().replace("rgb", "").replace("a", "").replace("(", "").replace(")", "")
+                # 分割并转为整数
+                parts = [int(x.strip()) for x in clean_str.split(",")]
+
+                # 必须是3个(RGB)或4个(RGBA)数值，且在0-255之间
+                if 3 <= len(parts) <= 4 and all(0 <= p <= 255 for p in parts):
+                    return tuple(parts)
+            except:
+                pass  # 解析失败，继续往下走
+
+        # --- 2. Hex 代码处理 ---
+        if user_input.startswith("#"):
+            try:
+                return ImageColor.getrgb(user_input)
+            except:
+                pass
+
+        # --- 3. 中文映射 ---
+        if user_input in self.cn_color_map:
+            mapped = self.cn_color_map[user_input]
+            if mapped.startswith("#"): return ImageColor.getrgb(mapped)
+            user_input = mapped  # 转为英文
+
+        # --- 4. 中文 "深/浅" 前缀处理 ---
+        prefix_map = {"深": "Dark", "浅": "Light", "亮": "Light", "暗": "Dark"}
+        for cn_pre, en_pre in prefix_map.items():
+            if user_input.startswith(cn_pre):
+                suffix = user_input[len(cn_pre):]
+                if suffix in self.cn_color_map:
+                    user_input = en_pre + self.cn_color_map[suffix]
+                    break
+
+        # --- 5. 英文标准库解析 ---
+        try:
+            return ImageColor.getrgb(user_input)
+        except:
+            # 6. 最后的保底
+            self.context.logger.warning(f"无法识别颜色: {user_input}，使用默认值。")
+            return ImageColor.getrgb(default_hex)
+
+    def _process_background(self, w, h):
         bg_name = self.config.get("background_filename", "bg.jpg")
         bg_path = os.path.join(self.res_dir, bg_name)
-
-        # 如果没有图，返回纯灰色背景
         if not os.path.exists(bg_path):
-            return Image.new('RGBA', (target_width, target_height), color=(50, 50, 50, 255))
-
+            return Image.new('RGBA', (w, h), (50, 50, 50, 255))
         try:
             img = Image.open(bg_path).convert('RGBA')
+            iw, ih = img.size
+            scale = max(w / iw, h / ih)
+            nw, nh = int(iw * scale), int(ih * scale)
+            img = img.resize((nw, nh), Image.Resampling.LANCZOS)
+            return img.crop(((nw - w) // 2, (nh - h) // 2, (nw + w) // 2, (nh + h) // 2))
         except:
-            return Image.new('RGBA', (target_width, target_height), color=(50, 50, 50, 255))
-
-        img_w, img_h = img.size
-        target_ratio = target_width / target_height
-        img_ratio = img_w / img_h
-
-        # 居中裁剪算法 (Center Crop)
-        if img_ratio > target_ratio:
-            # 图片比目标更宽：以高为基准，裁掉两边
-            new_height = target_height
-            new_width = int(img_h * target_ratio)  # 实际上这里应该是基于比例缩放
-            # 正确逻辑：先resize再crop或者先计算crop区域
-
-            # 更稳妥的方式：先按短边缩放
-            scale = target_height / img_h
-            resized_w = int(img_w * scale)
-            resized_h = target_height  # exactly target_height
-            img = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
-
-            # 裁剪中间
-            offset = (resized_w - target_width) // 2
-            img = img.crop((offset, 0, offset + target_width, target_height))
-
-        else:
-            # 图片比目标更高（或相等）：以宽为基准，裁掉上下
-            scale = target_width / img_w
-            resized_w = target_width  # exactly target_width
-            resized_h = int(img_h * scale)
-            img = img.resize((resized_w, resized_h), Image.Resampling.LANCZOS)
-
-            # 裁剪中间
-            offset = (resized_h - target_height) // 2
-            img = img.crop((0, offset, target_width, offset + target_height))
-
-        return img
+            return Image.new('RGBA', (w, h), (50, 50, 50, 255))
 
     def _draw_menu(self):
-        """
-        绘制菜单主逻辑
-        """
-        # --- 1. 初始化配置参数 ---
         title_text = self.config.get("menu_title", "功能菜单")
-        items = self.config.get("menu_items", {})
+        raw_items = self.config.get("menu_items", [])
+
+        parsed_items = []
+        for item in raw_items:
+            if isinstance(item, str):
+                parts = item.split(':', 1)
+                if len(parts) == 2:
+                    parsed_items.append((parts[0], parts[1]))
+                elif len(parts) == 1:
+                    parsed_items.append((parts[0], ""))
+
         layout_mode = self.config.get("layout_mode", "vertical")
+        W, H = (1920, 1080) if layout_mode == "horizontal" else (1080, 1920)
+        cols = 4 if (layout_mode == "horizontal" and len(parsed_items) > 6) else (
+            3 if layout_mode == "horizontal" else 2)
 
-        # 定义分辨率
-        if layout_mode == "horizontal":
-            W, H = 1920, 1080
-            # 横屏每行多放几个
-            cols = 4 if len(items) > 6 else 3
-        else:
-            W, H = 1080, 1920
-            # 竖屏默认双列
-            cols = 2
-
-        # --- 2. 准备底图 ---
         image = self._process_background(W, H)
+        draw = ImageDraw.Draw(image)
 
-        # --- 3. 绘制标题 ---
-        # 创建一个临时的 draw 对象用于计算文字大小
-        draw_temp = ImageDraw.Draw(image)
+        t_size = int(W * 0.08)
+        f_title = self._load_font(t_size)
+        bbox = draw.textbbox((0, 0), title_text, font=f_title)
+        tx, ty = (W - (bbox[2] - bbox[0])) / 2, int(H * 0.08)
 
-        # 标题字体大小自适应（宽度 8%）
-        title_size = int(W * 0.08)
-        font_title = self._load_font(title_size)
+        c_shadow = self._parse_smart_color(self.config.get("title_shadow_color"), "#00000080")
+        c_title = self._parse_smart_color(self.config.get("title_color"), "#FFFFFF")
 
-        # 获取文字宽高 (left, top, right, bottom)
-        bbox = draw_temp.textbbox((0, 0), title_text, font=font_title)
-        title_w = bbox[2] - bbox[0]
-        title_h = bbox[3] - bbox[1]
+        draw.text((tx + 4, ty + 4), title_text, font=f_title, fill=c_shadow)
+        draw.text((tx, ty), title_text, font=f_title, fill=c_title)
 
-        title_x = (W - title_w) / 2
-        title_y = int(H * 0.08)  # 距离顶部 8% 的位置
-
-        # 绘制标题阴影
-        draw_temp.text((title_x + 4, title_y + 4), title_text, font=font_title, fill=(0, 0, 0, 120))
-        # 绘制标题正文
-        draw_temp.text((title_x, title_y), title_text, font=font_title, fill=(255, 255, 255, 255))
-
-        # --- 4. 绘制菜单网格 ---
-        # 布局参数
-        margin_x = 60
-        start_y = title_y + title_h + 80  # 标题下方起始位置
-        gap = 35  # 卡片间距
-
-        # 计算卡片尺寸
-        # W = 2*margin + cols*card_w + (cols-1)*gap
-        card_w = (W - (2 * margin_x) - ((cols - 1) * gap)) / cols
-        card_h = 160  # 固定高度
-
-        # 字体准备
-        font_trigger = self._load_font(45)  # 触发词大小
-        font_desc = self._load_font(26)  # 简介大小
-
-        # 创建半透明图层 (用于画圆角白底)
         overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        draw_overlay = ImageDraw.Draw(overlay)
+        d_over = ImageDraw.Draw(overlay)
 
-        item_list = list(items.items())  # [("key", "value"), ...]
+        margin_x, gap = 60, 35
+        card_w = (W - 2 * margin_x - (cols - 1) * gap) / cols
+        card_h = 160
+        start_y = ty + (bbox[3] - bbox[1]) + 80
 
-        for i, (trigger, desc) in enumerate(item_list):
-            row = i // cols
-            col = i % cols
+        f_trig = self._load_font(45)
+        f_desc = self._load_font(26)
 
-            x = margin_x + col * (card_w + gap)
-            y = start_y + row * (card_h + gap)
+        c_bg = self._parse_smart_color(self.config.get("card_bg_color"), "#FFFFFFDC")
+        c_trig = self._parse_smart_color(self.config.get("trigger_text_color"), "#282828")
+        c_desc = self._parse_smart_color(self.config.get("desc_text_color"), "#646464")
 
-            # 4.1 绘制半透明白色背景 (圆角矩形)
-            rect = [x, y, x + card_w, y + card_h]
-            # fill=(255, 255, 255, 220) -> 白色, 不透明度 220/255
-            draw_overlay.rounded_rectangle(rect, radius=20, fill=(255, 255, 255, 220))
+        for i, (trigger, desc) in enumerate(parsed_items):
+            r, c = i // cols, i % cols
+            x = margin_x + c * (card_w + gap)
+            y = start_y + r * (card_h + gap)
 
-            # 4.2 绘制文字 (需要画在合并后的图上，或者直接在 overlay 画不透明色)
-            # 这里我们在 overlay 上直接画文字
+            d_over.rounded_rectangle([x, y, x + card_w, y + card_h], radius=20, fill=c_bg)
+            d_over.text((x + 20, y + 25), f"➤ {trigger}", font=f_trig, fill=c_trig)
 
-            # 触发词
-            t_text = f"➤ {trigger}"
-            draw_overlay.text((x + 20, y + 25), t_text, font=font_trigger, fill=(40, 40, 40, 255))
-
-            # 简介 (做简单的截断防止溢出)
-            # 估算一行能容纳的字数
             max_char = int((card_w - 40) / 26)
-            if len(desc) > max_char:
-                desc = desc[:max_char - 1] + "…"
+            if len(desc) > max_char: desc = desc[:max_char - 1] + "…"
+            d_over.text((x + 25, y + 95), desc, font=f_desc, fill=c_desc)
 
-            draw_overlay.text((x + 25, y + 95), desc, font=font_desc, fill=(100, 100, 100, 255))
-
-        # --- 5. 合并图层 ---
-        final_image = Image.alpha_composite(image, overlay)
-        return final_image
+        return Image.alpha_composite(image, overlay)
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def menu(self, event: AstrMessageEvent):
-        # 获取配置的触发词
-        trigger_cmd = self.config.get("menu_trigger", "菜单")
-
-        if event.message_str == trigger_cmd:
+        if event.message_str == self.config.get("menu_trigger", "菜单"):
             try:
-                # 生成图片
                 img = self._draw_menu()
-
-                # 保存临时文件
-                save_path = os.path.join(self.res_dir, "temp_menu_render.png")
-                img.save(save_path)
-
-                # 发送
-                yield event.image(save_path)
-
+                path = os.path.join(self.res_dir, "temp_menu.png")
+                img.save(path)
+                yield event.image(path)
             except Exception as e:
-                yield event.plain(f"菜单生成失败: {e}")
                 self.context.logger.error(f"菜单生成错误: {e}")
+                yield event.plain(f"菜单生成失败: {e}")
