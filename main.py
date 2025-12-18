@@ -5,7 +5,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "自定义底图菜单插件", "1.5.1")
+@register("custom_menu", "YourName", "自定义底图菜单插件", "1.0.0")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
