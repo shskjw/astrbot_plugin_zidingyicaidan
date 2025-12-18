@@ -51,7 +51,7 @@
         "default": "灰色"
     },
     "menu_items": {
-        "type": "array",
+        "type": "list",
         "description": "菜单项列表",
         "items": {
             "type": "string",

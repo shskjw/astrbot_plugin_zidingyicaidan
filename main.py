@@ -2,11 +2,10 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api.all import *
 import os
-import math
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "自定义底图菜单插件", "1.5.0")
+@register("custom_menu", "YourName", "自定义底图菜单插件", "1.5.1")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -35,7 +34,7 @@ class CustomMenu(Star):
         }
 
     def _load_font(self, size):
-        config_font = self.config.get("font_filename", "方正卡通.ttf")
+        config_font = self.config.get("font_filename", "font.ttf")
         font_path = os.path.join(self.res_dir, config_font)
         if os.path.exists(font_path):
             try:
@@ -47,45 +46,37 @@ class CustomMenu(Star):
 
     def _parse_smart_color(self, user_input, default_hex):
         """
-        超级颜色解析器：
-        1. RGB/RGBA: "255,0,0" 或 "(255,0,0,128)" 或 "rgb(255,0,0)"
-        2. Hex: "#FF0000"
-        3. 中文: "红色", "深蓝"
-        4. 英文: "SkyBlue"
+        颜色解析器：支持 RGB/RGBA, Hex, 中文, 英文
         """
         if not user_input:
             user_input = default_hex
 
         user_input = str(user_input).strip()
 
-        # --- 1. 尝试解析 RGB/RGBA 数值 (检测逗号) ---
+        # 1. 尝试解析 RGB/RGBA 数值 (检测逗号)
         if "," in user_input:
             try:
-                # 清洗字符串，去掉 rgb, rgba, 括号
                 clean_str = user_input.lower().replace("rgb", "").replace("a", "").replace("(", "").replace(")", "")
-                # 分割并转为整数
                 parts = [int(x.strip()) for x in clean_str.split(",")]
-
-                # 必须是3个(RGB)或4个(RGBA)数值，且在0-255之间
                 if 3 <= len(parts) <= 4 and all(0 <= p <= 255 for p in parts):
                     return tuple(parts)
             except:
-                pass  # 解析失败，继续往下走
+                pass
 
-        # --- 2. Hex 代码处理 ---
+                # 2. Hex 代码处理
         if user_input.startswith("#"):
             try:
                 return ImageColor.getrgb(user_input)
             except:
                 pass
 
-        # --- 3. 中文映射 ---
+        # 3. 中文映射
         if user_input in self.cn_color_map:
             mapped = self.cn_color_map[user_input]
             if mapped.startswith("#"): return ImageColor.getrgb(mapped)
-            user_input = mapped  # 转为英文
+            user_input = mapped
 
-        # --- 4. 中文 "深/浅" 前缀处理 ---
+            # 4. 中文 "深/浅" 前缀处理
         prefix_map = {"深": "Dark", "浅": "Light", "亮": "Light", "暗": "Dark"}
         for cn_pre, en_pre in prefix_map.items():
             if user_input.startswith(cn_pre):
@@ -94,11 +85,10 @@ class CustomMenu(Star):
                     user_input = en_pre + self.cn_color_map[suffix]
                     break
 
-        # --- 5. 英文标准库解析 ---
+        # 5. 英文标准库解析
         try:
             return ImageColor.getrgb(user_input)
         except:
-            # 6. 最后的保底
             self.context.logger.warning(f"无法识别颜色: {user_input}，使用默认值。")
             return ImageColor.getrgb(default_hex)
 
