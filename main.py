@@ -1,7 +1,7 @@
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
-from astrbot.api.all import logger, Image as AstrImage  # 显式导入 AstrImage 以免混淆
-from astrbot.api.all import *  # 导入其他组件
+from astrbot.api.all import logger, Image as AstrImage
+from astrbot.api.all import *
 
 import os
 import asyncio
@@ -11,7 +11,7 @@ import aiohttp
 from PIL import Image as PILImage, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.0.3")
+@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.0.4")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -38,21 +38,15 @@ class CustomMenu(Star):
 
     def _get_image_url(self, event: AstrMessageEvent):
         """从消息或引用中提取图片URL"""
-
-        # 1. 检查当前消息
-        # 【修复】直接遍历 message_obj，不需要 .content 或 .components
         if event.message_obj:
             for component in event.message_obj:
                 if isinstance(component, AstrImage) and component.url:
                     return component.url
 
-        # 2. 检查引用回复
         if event.message_obj.reply:
-            # 【修复】直接遍历 reply 对象
             for component in event.message_obj.reply:
                 if isinstance(component, AstrImage) and component.url:
                     return component.url
-
         return None
 
     async def _download_image(self, url):
@@ -200,16 +194,15 @@ class CustomMenu(Star):
     # ==========================
 
     @filter.command("上传底图")
-    async def upload_bg_cmd(self, event: AstrMessageEvent):
+    # 【修复】增加 *args 接收多余参数，防止报错
+    async def upload_bg_cmd(self, event: AstrMessageEvent, *args):
         """指令：上传底图 (请引用图片或直接发送图片+指令)"""
 
         img_url = self._get_image_url(event)
         if not img_url:
-            # 【修复】使用 plain_result
             yield event.plain_result("❌ 未检测到图片，请【引用】一张图片发送“上传底图”，或者发送包含图片的“上传底图”消息。")
             return
 
-        # 【修复】使用 plain_result
         yield event.plain_result("⏳ 正在下载并处理底图...")
 
         img_data = await self._download_image(img_url)
@@ -234,7 +227,8 @@ class CustomMenu(Star):
             yield event.plain_result(f"❌ 图片保存或验证失败: {e}")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
-    async def menu(self, event: AstrMessageEvent):
+    # 【修复】增加 *args 接收多余参数，防止报错
+    async def menu(self, event: AstrMessageEvent, *args):
         if event.message_str.startswith("上传底图"):
             return
 
@@ -244,7 +238,6 @@ class CustomMenu(Star):
                 save_path = os.path.join(self.res_dir, "temp_menu_render.png")
                 await asyncio.to_thread(img.save, save_path)
 
-                # 【修复】使用 image_result
                 yield event.image_result(save_path)
             except Exception as e:
                 logger.error(f"菜单生成错误: {e}")
