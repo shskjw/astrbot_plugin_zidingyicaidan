@@ -2,10 +2,11 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api.all import *
 import os
+import aiohttp  # 需要安装: pip install aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "自定义底图菜单插件", "1.0.0")
+@register("custom_menu", "YourName", "自定义底图菜单插件", "1.6.0")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -14,7 +15,7 @@ class CustomMenu(Star):
         if not os.path.exists(self.res_dir):
             os.makedirs(self.res_dir)
 
-        # 中文颜色映射表
+        # 颜色映射表
         self.cn_color_map = {
             "白": "White", "白色": "White",
             "黑": "Black", "黑色": "Black",
@@ -33,6 +34,36 @@ class CustomMenu(Star):
             "半透明黑": "#00000080",
         }
 
+    # --- 辅助功能：获取图片URL ---
+    def _get_image_url(self, event: AstrMessageEvent):
+        """尝试从消息或回复中获取图片URL"""
+        # 1. 检查当前消息是否包含图片
+        for component in event.message_obj.components:
+            if isinstance(component, Image) and component.url:
+                return component.url
+
+        # 2. 检查是否有回复消息 (Reply)
+        if event.message_obj.reply:
+            # 不同的适配器回复结构可能不同，尝试遍历 reply 的组件
+            if hasattr(event.message_obj.reply, "components"):
+                for component in event.message_obj.reply.components:
+                    if isinstance(component, Image) and component.url:
+                        return component.url
+
+        return None
+
+    # --- 辅助功能：下载图片 ---
+    async def _download_image(self, url):
+        """异步下载图片"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=15) as resp:
+                    if resp.status == 200:
+                        return await resp.read()
+        except Exception as e:
+            self.context.logger.error(f"下载图片失败: {e}")
+        return None
+
     def _load_font(self, size):
         config_font = self.config.get("font_filename", "font.ttf")
         font_path = os.path.join(self.res_dir, config_font)
@@ -45,15 +76,9 @@ class CustomMenu(Star):
         return ImageFont.truetype(fallback, size) if os.path.exists(fallback) else ImageFont.load_default()
 
     def _parse_smart_color(self, user_input, default_hex):
-        """
-        颜色解析器：支持 RGB/RGBA, Hex, 中文, 英文
-        """
-        if not user_input:
-            user_input = default_hex
-
+        if not user_input: user_input = default_hex
         user_input = str(user_input).strip()
 
-        # 1. 尝试解析 RGB/RGBA 数值 (检测逗号)
         if "," in user_input:
             try:
                 clean_str = user_input.lower().replace("rgb", "").replace("a", "").replace("(", "").replace(")", "")
@@ -63,20 +88,17 @@ class CustomMenu(Star):
             except:
                 pass
 
-                # 2. Hex 代码处理
         if user_input.startswith("#"):
             try:
                 return ImageColor.getrgb(user_input)
             except:
                 pass
 
-        # 3. 中文映射
         if user_input in self.cn_color_map:
             mapped = self.cn_color_map[user_input]
             if mapped.startswith("#"): return ImageColor.getrgb(mapped)
             user_input = mapped
 
-            # 4. 中文 "深/浅" 前缀处理
         prefix_map = {"深": "Dark", "浅": "Light", "亮": "Light", "暗": "Dark"}
         for cn_pre, en_pre in prefix_map.items():
             if user_input.startswith(cn_pre):
@@ -85,11 +107,9 @@ class CustomMenu(Star):
                     user_input = en_pre + self.cn_color_map[suffix]
                     break
 
-        # 5. 英文标准库解析
         try:
             return ImageColor.getrgb(user_input)
         except:
-            self.context.logger.warning(f"无法识别颜色: {user_input}，使用默认值。")
             return ImageColor.getrgb(default_hex)
 
     def _process_background(self, w, h):
@@ -168,12 +188,57 @@ class CustomMenu(Star):
 
         return Image.alpha_composite(image, overlay)
 
+    # --- 核心功能：上传底图 ---
+    @filter.command("上传底图")
+    async def upload_bg_cmd(self, event: AstrMessageEvent):
+        """指令：上传底图 (请引用图片或直接发送图片+指令)"""
+
+        # 1. 获取图片链接
+        img_url = self._get_image_url(event)
+        if not img_url:
+            yield event.plain("❌ 未检测到图片，请【引用】一张图片发送“上传底图”，或者发送包含图片的“上传底图”消息。")
+            return
+
+        yield event.plain("⏳ 正在下载并处理底图...")
+
+        # 2. 下载图片
+        img_data = await self._download_image(img_url)
+        if not img_data:
+            yield event.plain("❌ 图片下载失败，请重试。")
+            return
+
+        # 3. 确定保存路径
+        # 获取配置中的文件名，默认为 bg.jpg
+        bg_filename = self.config.get("background_filename", "bg.jpg")
+        save_path = os.path.join(self.res_dir, bg_filename)
+
+        # 4. 保存文件
+        try:
+            with open(save_path, "wb") as f:
+                f.write(img_data)
+
+            # 5. 验证图片是否有效 (可选，为了防止坏图)
+            try:
+                test_img = Image.open(save_path)
+                test_img.verify()  # 校验文件完整性
+                yield event.plain(f"✅ 底图上传成功！\n已保存为: {bg_filename}")
+            except Exception as e:
+                yield event.plain(f"⚠️ 文件保存成功，但似乎不是有效的图片格式。\n错误: {e}")
+
+        except Exception as e:
+            yield event.plain(f"❌ 保存文件时发生错误: {e}")
+
+    # --- 原有的菜单触发功能 ---
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def menu(self, event: AstrMessageEvent):
+        # 避免这里误触发上传底图指令
+        if event.message_str.startswith("上传底图"):
+            return
+
         if event.message_str == self.config.get("menu_trigger", "菜单"):
             try:
                 img = self._draw_menu()
-                path = os.path.join(self.res_dir, "temp_menu.png")
+                path = os.path.join(self.res_dir, "temp_menu_render.png")
                 img.save(path)
                 yield event.image(path)
             except Exception as e:
