@@ -35,7 +35,7 @@ class CustomMenu(Star):
         }
 
     def _load_font(self, size):
-        config_font = self.config.get("font_filename", "font.ttf")
+        config_font = self.config.get("font_filename", "方正卡通.ttf")
         font_path = os.path.join(self.res_dir, config_font)
         if os.path.exists(font_path):
             try:
