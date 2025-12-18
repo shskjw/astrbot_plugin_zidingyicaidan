@@ -7,11 +7,11 @@ import os
 import asyncio
 import aiohttp
 
-# 👇 【重要】将 PIL 的 Image 重命名为 PILImage，防止与 AstrBot 的 Image 冲突
+# 将 PIL 的 Image 重命名为 PILImage，防止与 AstrBot 的 Image 冲突
 from PIL import Image as PILImage, ImageDraw, ImageFont, ImageColor
 
 
-@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.7.2")
+@register("custom_menu", "YourName", "异步高性能自定义菜单插件", "1.0.3")
 class CustomMenu(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -39,19 +39,19 @@ class CustomMenu(Star):
     def _get_image_url(self, event: AstrMessageEvent):
         """从消息或引用中提取图片URL"""
 
-        # 1. 检查当前消息 (使用 content 而不是 components)
-        # 且使用 AstrImage (AstrBot的组件) 进行类型判断
-        for component in event.message_obj.content:
-            if isinstance(component, AstrImage) and component.url:
-                return component.url
+        # 1. 检查当前消息
+        # 【修复】直接遍历 message_obj，不需要 .content 或 .components
+        if event.message_obj:
+            for component in event.message_obj:
+                if isinstance(component, AstrImage) and component.url:
+                    return component.url
 
         # 2. 检查引用回复
         if event.message_obj.reply:
-            # 不同的 Adapter 实现可能不同，reply 通常也是一个 AstrBotMessage
-            if hasattr(event.message_obj.reply, "content"):
-                for component in event.message_obj.reply.content:
-                    if isinstance(component, AstrImage) and component.url:
-                        return component.url
+            # 【修复】直接遍历 reply 对象
+            for component in event.message_obj.reply:
+                if isinstance(component, AstrImage) and component.url:
+                    return component.url
 
         return None
 
@@ -122,7 +122,6 @@ class CustomMenu(Star):
         bg_name = self.config.get("background_filename", "bg.jpg")
         bg_path = os.path.join(self.res_dir, bg_name)
 
-        # 👇 使用 PILImage
         if not os.path.exists(bg_path):
             return PILImage.new('RGBA', (w, h), (50, 50, 50, 255))
         try:
@@ -168,7 +167,6 @@ class CustomMenu(Star):
         draw.text((tx + 4, ty + 4), title_text, font=f_title, fill=c_shadow)
         draw.text((tx, ty), title_text, font=f_title, fill=c_title)
 
-        # 👇 使用 PILImage
         overlay = PILImage.new('RGBA', image.size, (0, 0, 0, 0))
         d_over = ImageDraw.Draw(overlay)
 
@@ -195,7 +193,6 @@ class CustomMenu(Star):
             if len(desc) > max_char: desc = desc[:max_char - 1] + "…"
             d_over.text((x + 25, y + 95), desc, font=f_desc, fill=c_desc)
 
-        # 👇 使用 PILImage
         return PILImage.alpha_composite(image, overlay)
 
     # ==========================
@@ -208,14 +205,16 @@ class CustomMenu(Star):
 
         img_url = self._get_image_url(event)
         if not img_url:
-            yield event.plain("❌ 未检测到图片，请【引用】一张图片发送“上传底图”，或者发送包含图片的“上传底图”消息。")
+            # 【修复】使用 plain_result
+            yield event.plain_result("❌ 未检测到图片，请【引用】一张图片发送“上传底图”，或者发送包含图片的“上传底图”消息。")
             return
 
-        yield event.plain("⏳ 正在下载并处理底图...")
+        # 【修复】使用 plain_result
+        yield event.plain_result("⏳ 正在下载并处理底图...")
 
         img_data = await self._download_image(img_url)
         if not img_data:
-            yield event.plain("❌ 图片下载失败，请检查网络或图片链接。")
+            yield event.plain_result("❌ 图片下载失败，请检查网络或图片链接。")
             return
 
         bg_filename = self.config.get("background_filename", "bg.jpg")
@@ -225,15 +224,14 @@ class CustomMenu(Star):
             await asyncio.to_thread(self._save_file_sync, save_path, img_data)
 
             def verify_img():
-                # 👇 使用 PILImage
                 with PILImage.open(save_path) as test_img:
                     test_img.verify()
 
             await asyncio.to_thread(verify_img)
-            yield event.plain(f"✅ 底图上传成功！\n已保存为: {bg_filename}")
+            yield event.plain_result(f"✅ 底图上传成功！\n已保存为: {bg_filename}")
         except Exception as e:
             logger.error(f"底图处理失败: {e}")
-            yield event.plain(f"❌ 图片保存或验证失败: {e}")
+            yield event.plain_result(f"❌ 图片保存或验证失败: {e}")
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def menu(self, event: AstrMessageEvent):
@@ -245,7 +243,9 @@ class CustomMenu(Star):
                 img = await asyncio.to_thread(self._draw_menu_sync)
                 save_path = os.path.join(self.res_dir, "temp_menu_render.png")
                 await asyncio.to_thread(img.save, save_path)
-                yield event.image(save_path)
+
+                # 【修复】使用 image_result
+                yield event.image_result(save_path)
             except Exception as e:
                 logger.error(f"菜单生成错误: {e}")
-                yield event.plain(f"菜单生成失败: {e}")
+                yield event.plain_result(f"菜单生成失败: {e}")
